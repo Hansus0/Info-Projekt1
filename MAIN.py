@@ -32,12 +32,12 @@ def flip(sprites):
 # Load sprite sheets from assets on disk (keeps original project support)
 def load_sprite_sheets(dir1, dir2, width, height, direction=False):
     """
-    Load and slice spritesheets located at assets/dir1/dir2.
+    Load and slice spritesheets located at Assets/dir1/dir2.
     - width,height: size of each frame in the sheet
     - direction: if True, also generate left/right flipped variants
     Returns a dict mapping names to lists of Surfaces.
     """
-    path = join("assets", dir1, dir2)
+    path = join("Assets", dir1, dir2)
     images = [f for f in listdir(path) if isfile(join(path, f))]
 
     all_sprites = {}
@@ -68,7 +68,7 @@ def get_block(size):
     Return a block Surface taken from the terrain tilesheet.
     This is used to draw ground/platform visuals.
     """
-    path = join("assets", "Terrain", "Terrain.png")
+    path = join("Assets", "Terrain", "3aa9ff21fc29b32.png")
     image = pygame.image.load(path).convert_alpha()
     surface = pygame.Surface((size, size), pygame.SRCALPHA, 32)
     # Take a specific tile region from the tilesheet (index chosen by original project)
@@ -86,7 +86,7 @@ class Player(pygame.sprite.Sprite):
     """
     COLOR = (255, 0, 0)
     GRAVITY = 1
-    SPRITES = load_sprite_sheets("MainCharacters", "MaskDude", 32, 32, True)
+    SPRITES = load_sprite_sheets("MainCharacter", "", 32, 32, True)
     ANIMATION_DELAY = 3
 
     # Add ledge-hold defaults
@@ -283,49 +283,12 @@ class Block(Object):
         self.mask = pygame.mask.from_surface(self.image)
 
 
-class Fire(Object):
-    """Animated fire trap that can be toggled on/off."""
-    ANIMATION_DELAY = 3
-
-    def __init__(self, x, y, width, height):
-        super().__init__(x, y, width, height, "fire")
-        self.fire = load_sprite_sheets("Traps", "Fire", width, height)
-        self.image = self.fire["off"][0]
-        self.mask = pygame.mask.from_surface(self.image)
-        self.animation_count = 0
-        self.animation_name = "off"
-
-    def on(self):
-        """Enable fire animation (dangerous)."""
-        self.animation_name = "on"
-
-    def off(self):
-        """Disable fire animation (safe)."""
-        self.animation_name = "off"
-
-    def loop(self):
-        """Advance animation and update mask/rect every frame."""
-        sprites = self.fire[self.animation_name]
-        sprite_index = (self.animation_count //
-                        self.ANIMATION_DELAY) % len(sprites)
-        self.image = sprites[sprite_index]
-        self.animation_count += 1
-
-        # Update rect/mask to match the current frame
-        self.rect = self.image.get_rect(topleft=(self.rect.x, self.rect.y))
-        self.mask = pygame.mask.from_surface(self.image)
-
-        # Reset animation counter if it grows too large
-        if self.animation_count // self.ANIMATION_DELAY > len(sprites):
-            self.animation_count = 0
-
-
 def get_background(name):
     """
     Load a background image and compute tiling positions so the background fills the screen.
     Returns (tiles, image) where tiles is a list of top-left positions to blit the image.
     """
-    image = pygame.image.load(join("assets", "Background", name))
+    image = pygame.image.load(join("Assets", "Background", name))
     _, _, width, height = image.get_rect()
     tiles = []
 
@@ -385,6 +348,12 @@ class UI:
 
         # Fullscreen flag
         self.fullscreen = False
+
+        # Inventory data
+        self.equipment = {}  # dict of slot_name: item dict, e.g. {"Weapon": {"name": "Sword"}}
+        self.skills = []  # list of skill names
+        self.magic = []  # list of magic names
+        self.storage = [None] * 10  # list of item dicts or None
 
         # Keybindings map (display only)
         self.keybindings_map = {
@@ -741,8 +710,6 @@ class UI:
 
         # draw options overlay on top if open
         self.draw_options(win)
-
-
 # Draw the game world and UI each frame
 def draw(window, background, bg_image, player, objects, offset_x, ui):
     # Tile the background to cover the screen
@@ -814,11 +781,6 @@ def handle_move(player, objects):
 
     vertical_collide = handle_vertical_collision(player, objects, player.y_vel)
     to_check = [collide_left, collide_right, *vertical_collide]
-
-    for obj in to_check:
-        if obj and obj.name == "fire":
-            player.make_hit()
-
 
 # Keep ground blocks generated in a band around the camera so ground appears infinite
 def update_ground(objects, block_size, offset_x, ground_y):
@@ -1098,14 +1060,12 @@ def main():
     ground_y = HEIGHT - block_size  # y coordinate for ground blocks
 
     player = Player(100, 100, 50, 50)
-    fire = Fire(100, ground_y - 64, 16, 32)
-    fire.on()
 
     # initialize a chunk of ground; update_ground will expand/trim as needed
     floor = [Block(i * block_size, ground_y, block_size)
              for i in range(-WIDTH // block_size, (WIDTH * 2) // block_size)]
     objects = [*floor, Block(0, HEIGHT - block_size * 2, block_size),
-               Block(block_size * 3, HEIGHT - block_size * 4, block_size), fire]
+               Block(block_size * 3, HEIGHT - block_size * 4, block_size),]
 
     # UI needs reference to player and object list for minimap
     ui = UI(player, objects)
@@ -1194,7 +1154,6 @@ def main():
 
         # Per-frame updates: physics, traps, input handling
         player.loop(FPS)
-        fire.loop()
         handle_move(player, objects)
 
         # Handle ledge grabbing/holding (uses key state and dt)
