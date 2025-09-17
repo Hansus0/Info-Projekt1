@@ -1250,4 +1250,5 @@ bg_image = None
 
 if __name__ == "__main__":
     # main is defined without parameters; call it directly
+
     main()
