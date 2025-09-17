@@ -336,6 +336,71 @@ def get_background(name):
 
     return tiles, image
 
+#Klasse Zombie, die den Spieler jagt
+class Zombie(pygame.sprite.Sprite):
+    def __init__(self, x, y, width=PLAYER_WIDTH, height=PLAYER_HEIGHT):
+        super().__init__()
+        self.image = pygame.Surface((width, height))
+        self.image.fill((50, 150, 50))  # grünlicher Block als Platzhalter
+        self.rect = self.image.get_rect(topleft=(x, y))
+
+        self.speed = 1   # normale Geschwindigkeit (langsam)
+        self.direction = random.choice([-1, 1])  # Start: links oder rechts
+        self.detection_range = 400
+        self.damage = 1
+
+        self.vel_y = 0  # einfache Schwerkraft
+
+    def update(self, player, objects, block_size):
+        # --- Gravitations-Logik ---
+        self.vel_y += 1  # Schwerkraft
+        self.rect.y += self.vel_y
+        on_ground = False
+        for obj in objects:
+            if isinstance(obj, Block) and self.rect.colliderect(obj.rect):
+                if self.vel_y > 0:  # Landet auf Block
+                    self.rect.bottom = obj.rect.top
+                    self.vel_y = 0
+                    on_ground = True
+
+        # --- Spieler-Distanz ---
+        dx = player.rect.centerx - self.rect.centerx
+        dy = player.rect.centery - self.rect.centery
+        distance = abs(dx) + abs(dy)
+
+        if distance < self.detection_range:
+            # Spieler im Umkreis -> Zombie jagt ihn doppelt so schnell
+            step = self.speed * 2
+            if dx < 0:
+                self.rect.x -= step
+                self.direction = -1
+            else:
+                self.rect.x += step
+                self.direction = 1
+        else:
+            # Zufällig langsam nach links/rechts
+            self.rect.x += self.direction * self.speed
+
+            # Abgrund-KI: prüfen ob Boden unter den Füßen ist
+            foot_x = self.rect.centerx + self.direction * (self.rect.width // 2)
+            foot_y = self.rect.bottom + 5
+            tile_x = (foot_x // block_size) * block_size
+            tile_y = (foot_y // block_size) * block_size
+
+            solid_below = any(
+                isinstance(obj, Block) and obj.rect.collidepoint(foot_x, foot_y)
+                for obj in objects
+            )
+            if not solid_below:
+                self.direction *= -1  # umkehren am Abgrund
+
+        # --- Kollision mit Spieler ---
+        if self.rect.colliderect(player.rect):
+            player.health -= self.damage
+
+    def draw(self, window, offset_x):
+        window.blit(self.image, (self.rect.x - offset_x, self.rect.y))
+
 
 # UI class draws HUD elements: bars, icons, minimap, ability/inventory boxes
 class UI:
@@ -1252,3 +1317,4 @@ if __name__ == "__main__":
     # main is defined without parameters; call it directly
 
     main()
+
