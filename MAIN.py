@@ -321,7 +321,7 @@ class UI:
         # abilities and inventory are placeholders for the HUD
         self.abilities = [
             {"name": "Dash", "key": "Q", "cooldown": 2, "max_cd": 5},
-            {"name": "Shield", "key": "E", "cooldown": 0, "max_cd": 8},
+            {"name": "Shield", "key": "W", "cooldown": 0, "max_cd": 8},
             {"name": "Blast", "key": "R", "cooldown": 5, "max_cd": 10},
         ]
         self.inventory = [
@@ -363,7 +363,7 @@ class UI:
             "Inventory": pygame.K_i,
             "Options": pygame.K_o,
             "Dash": pygame.K_q,
-            "Shield": pygame.K_e,
+            "Shield": pygame.K_w,
             "Blast": pygame.K_r,
         }
 
@@ -812,9 +812,9 @@ def update_ground(objects, block_size, offset_x, ground_y):
 def handle_ledge_grab(player, objects, dt, block_size):
 	"""
 	Manage ledge grabbing/holding:
-	- Player starts holding when SPACE is held while adjacent to a block ledge and airborne.
+	- Player starts holding when E is held while adjacent to a block ledge and airborne.
 	- While holding: player stays snapped next to the ledge, hold_time accumulates (max HOLD_MAX).
-	- Releasing SPACE or exceeding HOLD_MAX ends the hold.
+	- Releasing E or exceeding HOLD_MAX ends the hold.
 	- While holding the player may press UP or W to perform the extra jump.
 	"""
 	keys = pygame.key.get_pressed()
@@ -826,13 +826,13 @@ def handle_ledge_grab(player, objects, dt, block_size):
 			player.end_hold()
 			return
 
-		# Release if SPACE is released
-		if not keys[pygame.K_SPACE]:
+		# Release if E is released
+		if not keys[pygame.K_e]:
 			player.end_hold()
 			return
 
-		# Jump from hold with UP/W (gives one extra jump)
-		if keys[pygame.K_UP] or keys[pygame.K_w]:
+		# Jump from hold with UP (gives one extra jump)
+		if keys[pygame.K_UP]:
 			player.end_hold()
 			# perform jump (Player.jump will increment jump_count)
 			player.jump()
@@ -854,8 +854,15 @@ def handle_ledge_grab(player, objects, dt, block_size):
 		player.y_vel = 0
 		return
 
-	# Not holding: require SPACE held to start hold, and player must be airborne
-	if not keys[pygame.K_SPACE]:
+	# Not holding: require E held to start hold, and player must be airborne
+	# Fix: allow jump even if e is held, so check jump key first
+	if keys[pygame.K_UP] or keys[pygame.K_w]:
+		# allow jump if jump count < 2 and not holding
+		if player.jump_count < 2 and not player.holding:
+			player.jump()
+			return
+
+	if not keys[pygame.K_e]:
 		return
 
 	# player's airborne check: not grounded -> jump_count > 0 or y_vel != 0
@@ -891,6 +898,7 @@ def generate_cubes(x_min, x_max, num_cubes, block_size, occupied, ground_y, play
 	an existing platform, or from the player (player_rect).
 	- player_rect: pygame.Rect for the player; treated as a temporary support source.
 	"""
+	global last_platform_length
 	if min_gap is None:
 		min_gap = block_size // 2
 
@@ -904,8 +912,7 @@ def generate_cubes(x_min, x_max, num_cubes, block_size, occupied, ground_y, play
 
 	# helper to check for support either in existing occupied, in placed_set, or the player
 	def has_support_near(xp, yp):
-		# any support (sx,sy) below yp within vertical and horizontal tolerances
-		# include player as support
+		# Simplified support check: only check if there is any block or player below within vertical and horizontal reach
 		if player_rect is not None:
 			sx = player_rect.centerx
 			sy = player_rect.bottom
@@ -1004,23 +1011,41 @@ def generate_cubes(x_min, x_max, num_cubes, block_size, occupied, ground_y, play
 		if any((x0 == ox and abs(y - oy) < 1) for (ox, oy) in occupied) or (x0, y) in placed_set:
 			continue
 
-		# choose platform length (favor multi-block sometimes)
-		length = random.choice([1,1,2,2,3,4])
+		# choose a platform length (favor multi-block sometimes, avoid repeating last length)
+		possible_lengths = [1,2,3,4]
+		if last_platform_length in possible_lengths:
+			possible_lengths.remove(last_platform_length)
+		length_options = [l for l in [1,1,2,2,3,4] if l in possible_lengths]
+		if length_options:
+			length = random.choice(length_options)
+		else:
+			length = random.choice([1,2,3,4])
+		last_platform_length = length
+		height = random.choice([1,2])
 
 		if x0 + length * block_size > x_max:
 			continue
 
-		positions = [(x0 + i * block_size, y) for i in range(length)]
+		positions = []
+		for i in range(length):
+			for h in range(height):
+				positions.append((x0 + i * block_size, y - h * block_size))
 		# avoid overlaps with occupied or already placed in this batch
 		if any(pos in occupied or pos in placed_set for pos in positions):
 			continue
 
-		# spacing check at same y
-		if any(oy == y and any(abs(ox - px) < (block_size + min_gap) for (px, _) in positions) for (ox, oy) in (set(occupied) | placed_set)):
+		# spacing check at each y (simplified)
+		skip = False
+		for (px, py) in positions:
+			if any(oy == py and abs(ox - px) < (block_size + min_gap) for (ox, oy) in (set(occupied) | placed_set)):
+				skip = True
+				break
+		if skip:
 			continue
 
-		# Check accessibility: at least one tile must have support within double-jump distance from ground/platform/player
-		if any(has_support_near(px, y) for (px, _) in positions):
+		# Check accessibility: at least one bottom tile must have support within double-jump distance from ground/platform/player
+		lowest_y = min(py for _, py in positions)
+		if any(has_support_near(px, lowest_y) for (px, py) in positions if py == lowest_y):
 			support_exists = True
 		else:
 			support_exists = False
@@ -1029,8 +1054,8 @@ def generate_cubes(x_min, x_max, num_cubes, block_size, occupied, ground_y, play
 		if not support_exists:
 			# attempt to build a helper column below middle block connecting to nearest support (including player)
 			mid_x = positions[len(positions)//2][0]
-			helpers_added = build_helper_column_towards_support(mid_x, y)
-			if not helpers_added and not has_support_near(mid_x, y):
+			helpers_added = build_helper_column_towards_support(mid_x, lowest_y)
+			if not helpers_added and not has_support_near(mid_x, lowest_y):
 				# cannot make it reachable from player/ground/platforms, skip placement
 				continue
 
@@ -1048,12 +1073,35 @@ def generate_cubes(x_min, x_max, num_cubes, block_size, occupied, ground_y, play
 	return placed
 
 
+def reset_game():
+    global player, objects, occupied, cubes, frame_count, ground_removed, offset_x, next_gen_right, next_gen_left, block_size, ground_y, GENERATE_CHUNK, CUBE_BATCH, last_platform_length
+    player = Player(100, 100, 50, 50)
+    floor = [Block(i * block_size, ground_y, block_size) for i in range(-WIDTH // block_size, (WIDTH * 2) // block_size)]
+    objects = [*floor, Block(0, HEIGHT - block_size * 2, block_size), Block(block_size * 3, HEIGHT - block_size * 4, block_size)]
+    occupied = set((obj.rect.x, obj.rect.y) for obj in objects if isinstance(obj, Block))
+    cubes = []
+    start_gen = 0
+    end_gen = 0 + WIDTH + GENERATE_CHUNK
+    initial_batch = CUBE_BATCH * 3
+    new_cubes = generate_cubes(start_gen, end_gen, initial_batch, block_size, occupied, ground_y, player.rect, max_vertical_gap=block_size * 2)
+    cubes.extend(new_cubes)
+    objects.extend(new_cubes)
+    next_gen_right = end_gen
+    next_gen_left = start_gen
+    offset_x = 0
+    frame_count = 0
+    ground_removed = False
+    last_platform_length = 0
+
+
 # Main game function: sets up world, loops, and updates
 def main():
-    global WIDTH, HEIGHT, window, background, bg_image
+    global WIDTH, HEIGHT, window, background, bg_image, player, objects, occupied, cubes, frame_count, ground_removed, offset_x, next_gen_right, next_gen_left, block_size, ground_y, GENERATE_CHUNK, CUBE_BATCH, last_platform_length
     # declare globals that may be reassigned (resolution / fullscreen)
 
     clock = pygame.time.Clock()
+    frame_count = 0
+    last_platform_length = 0
     background, bg_image = get_background("Blue.png")
 
     block_size = 96
@@ -1075,17 +1123,20 @@ def main():
 
     # procedural cubes/platforms management
     cubes = []                 # list of Block objects generated as cubes/platforms
-    CUBE_BATCH = 8             # try to place this many structures per spawn
+    CUBE_BATCH = 12            # try to place this many structures per spawn
     GENERATE_CHUNK = WIDTH * 2 # width of each generation chunk
+
+    # Flag to stop regenerating ground after removal
+    ground_removed = False
 
     # Ensure camera offset is defined before computing spawn positions
     offset_x = 0              # camera horizontal offset (must be set before spawn cursors)
 
     # initial generation: cover the start screen plus margins so platforms appear immediately
-    start_gen = offset_x - GENERATE_CHUNK
+    start_gen = offset_x
     end_gen = offset_x + WIDTH + GENERATE_CHUNK
     initial_batch = CUBE_BATCH * 3
-    new_cubes = generate_cubes(start_gen, end_gen, initial_batch, block_size, occupied, ground_y, player.rect, max_vertical_gap=block_size * 4)
+    new_cubes = generate_cubes(start_gen, end_gen, initial_batch, block_size, occupied, ground_y, player.rect, max_vertical_gap=block_size * 2)
     if new_cubes:
         cubes.extend(new_cubes)
         objects.extend(new_cubes)
@@ -1096,105 +1147,128 @@ def main():
 
     scroll_area_width = 200   # area near screen edges that triggers camera scroll
 
+    state = "playing"
+
     run = True
     while run:
         # tick and compute dt in seconds
         ms = clock.tick(FPS)
         dt = ms / 1000.0
+        if state == "playing":
+            frame_count += 1
 
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 run = False
                 break
 
-            # Handle mouse clicks for inventory tabs and options
-            if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
-                if ui.inventory_open:
-                    mx, my = event.pos
-                    for tab_name, rect in ui.tab_rects.items():
-                        if rect.collidepoint(mx, my):
-                            ui.inventory_tab = tab_name
-                            break
-                elif ui.options_open:
-                    mx, my = event.pos
-                    action = ui.handle_options_click(mx, my)
-                    # apply returned actions
-                    if action:
-                        # set resolution
-                        if "set_resolution" in action:
-                            new_w, new_h = action["set_resolution"]
-                            WIDTH, HEIGHT = new_w, new_h
-                            # preserve fullscreen flag when recreating display
-                            flags = pygame.FULLSCREEN if ui.fullscreen else 0
-                            window = pygame.display.set_mode((WIDTH, HEIGHT), flags)
-                            background, bg_image = get_background("Blue.png")
-                        # toggle fullscreen
-                        if "toggle_fullscreen" in action:
-                            ui.fullscreen = action["toggle_fullscreen"]
-                            flags = pygame.FULLSCREEN if ui.fullscreen else 0
-                            window = pygame.display.set_mode((WIDTH, HEIGHT), flags)
-                    # prevent clicks passing to other UI
-                    continue
+            if state == "playing":
+                # Handle mouse clicks for inventory tabs and options
+                if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+                    if ui.inventory_open:
+                        mx, my = event.pos
+                        for tab_name, rect in ui.tab_rects.items():
+                            if rect.collidepoint(mx, my):
+                                ui.inventory_tab = tab_name
+                                break
+                    elif ui.options_open:
+                        mx, my = event.pos
+                        action = ui.handle_options_click(mx, my)
+                        # apply returned actions
+                        if action:
+                            # set resolution
+                            if "set_resolution" in action:
+                                new_w, new_h = action["set_resolution"]
+                                WIDTH, HEIGHT = new_w, new_h
+                                # preserve fullscreen flag when recreating display
+                                flags = pygame.FULLSCREEN if ui.fullscreen else 0
+                                window = pygame.display.set_mode((WIDTH, HEIGHT), flags)
+                                background, bg_image = get_background("Blue.png")
+                            # toggle fullscreen
+                            if "toggle_fullscreen" in action:
+                                ui.fullscreen = action["toggle_fullscreen"]
+                                flags = pygame.FULLSCREEN if ui.fullscreen else 0
+                                window = pygame.display.set_mode((WIDTH, HEIGHT), flags)
+                        # prevent clicks passing to other UI
+                        continue
 
-            # Toggle inventory with "I" and options with "O" and tab cycle with TAB; jump with SPACE
-            if event.type == pygame.KEYDOWN:
-                if event.key == pygame.K_i:
-                    ui.toggle_inventory()
-                elif event.key == pygame.K_o:
-                    ui.toggle_options()
-                elif event.key == pygame.K_TAB and ui.inventory_open:
-                    ui.cycle_tab()
-                elif event.key == pygame.K_SPACE and player.jump_count < 2 and not player.holding:
-                    player.jump()
+                # Toggle inventory with "I" and options with "O" and tab cycle with TAB; jump with SPACE
+                if event.type == pygame.KEYDOWN:
+                    if event.key == pygame.K_i:
+                        ui.toggle_inventory()
+                    elif event.key == pygame.K_o:
+                        ui.toggle_options()
+                    elif event.key == pygame.K_TAB and ui.inventory_open:
+                        ui.cycle_tab()
+                    elif event.key == pygame.K_SPACE and player.jump_count < 2 and not player.holding:
+                        player.jump()
+            elif state == "dead":
+                if event.type == pygame.KEYDOWN and event.key == pygame.K_r:
+                    reset_game()
+                    state = "playing"
 
-        # Regenerate resources each frame (rate per second / FPS)
-        ui.health = min(ui.max_health, ui.health + (HEALTH_REGEN_RATE / FPS))
-        ui.stamina = min(ui.max_stamina, ui.stamina + (STAMINA_REGEN_RATE / FPS))
-        ui.mana = min(ui.max_mana, ui.mana + (MANA_REGEN_RATE / FPS))
+        if state == "playing":
+            # Regenerate resources each frame (rate per second / FPS)
+            ui.health = min(ui.max_health, ui.health + (HEALTH_REGEN_RATE / FPS))
+            ui.stamina = min(ui.max_stamina, ui.stamina + (STAMINA_REGEN_RATE / FPS))
+            ui.mana = min(ui.max_mana, ui.mana + (MANA_REGEN_RATE / FPS))
 
-        # Per-frame updates: physics, traps, input handling
-        player.loop(FPS)
-        handle_move(player, objects)
+            # Per-frame updates: physics, traps, input handling
+            player.loop(FPS)
+            handle_move(player, objects)
 
-        # Handle ledge grabbing/holding (uses key state and dt)
-        handle_ledge_grab(player, objects, dt, block_size)
+            # Handle ledge grabbing/holding (uses key state and dt)
+            handle_ledge_grab(player, objects, dt, block_size)
 
-        # Keep the ground generated around the camera every frame so it appears infinite.
-        update_ground(objects, block_size, offset_x, ground_y)
+            if player.rect.top > HEIGHT:
+                state = "dead"
 
-        # Remove cubes far behind/forward the camera and free occupied spots (both sides)
-        remove_margin = WIDTH
-        for c in cubes[:]:
-            if c.rect.x < offset_x - remove_margin or c.rect.x > offset_x + WIDTH + remove_margin:
-                if c in objects:
-                    objects.remove(c)
-                cubes.remove(c)
-                occupied.discard((c.rect.x, c.rect.y))
+            # Remove all ground blocks at frame 600
+            if frame_count == 600:
+                for obj in objects[:]:
+                    if isinstance(obj, Block) and obj.rect.y == ground_y:
+                        objects.remove(obj)
+                        occupied.discard((obj.rect.x, obj.rect.y))
+                ground_removed = True
 
-        # Generate more cubes/platforms ahead and behind as the camera moves
-        GENERATE_AHEAD = GENERATE_CHUNK * 2
-        # generate to the right while next_gen_right is within target ahead limit
-        while next_gen_right < offset_x + GENERATE_AHEAD:
-            new_cubes = generate_cubes(next_gen_right, next_gen_right + GENERATE_CHUNK, CUBE_BATCH, block_size, occupied, ground_y, player.rect, max_vertical_gap=block_size * 4)
-            if new_cubes:
-                cubes.extend(new_cubes)
-                objects.extend(new_cubes)
-            next_gen_right += GENERATE_CHUNK
+            # Keep the ground generated around the camera every frame so it appears infinite.
+            if not ground_removed:
+                update_ground(objects, block_size, offset_x, ground_y)
 
-        # generate to the left while next_gen_left is within target behind limit
-        while next_gen_left > offset_x - GENERATE_AHEAD:
-            left_start = next_gen_left - GENERATE_CHUNK
-            new_cubes = generate_cubes(left_start, next_gen_left, CUBE_BATCH, block_size, occupied, ground_y, player.rect, max_vertical_gap=block_size * 4)
-            if new_cubes:
-                cubes.extend(new_cubes)
-                objects.extend(new_cubes)
-            next_gen_left -= GENERATE_CHUNK
+            # Remove cubes far behind the camera and free occupied spots (left side only)
+            remove_margin = WIDTH
+            for c in cubes[:]:
+                if c.rect.x < offset_x - remove_margin:
+                    if c in objects:
+                        objects.remove(c)
+                    cubes.remove(c)
+                    occupied.discard((c.rect.x, c.rect.y))
 
-        # Center camera on player horizontally so player stays in the middle of the screen
-        offset_x = int(player.rect.centerx - WIDTH // 2)
+            # Generate more cubes/platforms ahead and behind as the camera moves
+            GENERATE_AHEAD = GENERATE_CHUNK * 3
+            # generate to the right while next_gen_right is within target ahead limit
+            while next_gen_right < offset_x + GENERATE_AHEAD:
+                new_cubes = generate_cubes(next_gen_right, next_gen_right + GENERATE_CHUNK, CUBE_BATCH, block_size, occupied, ground_y, player.rect, max_vertical_gap=block_size * 2)
+                if new_cubes:
+                    cubes.extend(new_cubes)
+                    objects.extend(new_cubes)
+                next_gen_right += GENERATE_CHUNK
 
-        # Draw world and UI
-        draw(window, background, bg_image, player, objects, offset_x, ui)
+
+
+            # Center camera on player horizontally so player stays in the middle of the screen
+            offset_x = int(player.rect.centerx - WIDTH // 2)
+
+            # Draw world and UI
+            draw(window, background, bg_image, player, objects, offset_x, ui)
+
+        else:  # dead
+            # Draw death screen
+            window.fill((0, 0, 0))
+            font = pygame.font.SysFont("arial", 50)
+            text = font.render("You Died", True, (255, 255, 255))
+            window.blit(text, (WIDTH // 2 - text.get_width() // 2, HEIGHT // 2 - text.get_height() // 2))
+            pygame.display.update()
 
         # (draw_options is already called inside ui.draw, so no separate call needed)
         # ...existing code...
