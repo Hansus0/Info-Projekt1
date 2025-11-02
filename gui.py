@@ -34,7 +34,7 @@ class UI:
         self.damage_flash = 0  # For damage indication
         
         self.abilities = [
-            {"name": "Dash", "key": "Q", "cooldown": 0, "max_cd": 2},
+            {"name": "Dash", "key": "Q", "cooldown": 0, "max_cd": self.player.DASH_COOLDOWN},
         ]
         
         self.inventory = []
@@ -270,20 +270,23 @@ class UI:
         ab_h = 80
         ab_x = WIDTH//2 - (len(self.abilities)*ab_w)//2
         ab_y = HEIGHT-100
-        
+
         for i, ab in enumerate(self.abilities):
             s = pygame.Surface((ab_w, ab_h), pygame.SRCALPHA)
             s.fill((0,0,0,120))
             win.blit(s, (ab_x+i*ab_w, ab_y))
             pygame.draw.rect(win, (100,100,255), (ab_x+i*ab_w+8, ab_y+8, ab_w-16, ab_h-16), 2)
-            
+
             font = pygame.font.SysFont("arial", 18)
             win.blit(font.render(ab["key"], True, (255,255,0)), (ab_x+i*ab_w+10, ab_y+10))
             win.blit(font.render(ab["name"], True, (255,255,255)), (ab_x+i*ab_w+10, ab_y+35))
-            
-            cd_txt = f"{ab['cooldown']}/{ab['max_cd']}" if ab["cooldown"] > 0 else "Ready"
-            win.blit(font2.render(cd_txt, True, (255,0,0) if ab["cooldown"] > 0 else (0,255,0)), 
-                    (ab_x+i*ab_w+10, ab_y+60))
+
+            # Update cooldown from player
+            current_cd = round(self.player.dash_cooldown_timer, 1)
+            is_ready = current_cd >= ab['max_cd']
+            cd_txt = "Ready" if is_ready else f"{current_cd}/{ab['max_cd']}"
+            win.blit(font2.render(cd_txt, True, (0,255,0) if is_ready else (255,0,0)),
+                    (ab_x+i*ab_w+10, ab_y+55))
 
         self.draw_minimap(win, offset_x)
         self.draw_inventory(win)

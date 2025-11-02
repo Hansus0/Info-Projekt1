@@ -496,6 +496,10 @@ def handle_ledge_grab(player, objects, dt, block_size):
 		# grounded; don't grab
 		return
 
+	# only allow grabbing when falling downward
+	if player.y_vel <= 0:
+		return
+
 	# detection tolerances
 	horiz_thresh = max(8, block_size // 8)  # px tolerance for being adjacent to block side
 	vert_tolerance = block_size // 2  # vertical closeness to block top
@@ -507,13 +511,13 @@ def handle_ledge_grab(player, objects, dt, block_size):
 		b = obj
 		# right side of player near left side of block
 		if abs(player.rect.right - b.rect.left) <= horiz_thresh:
-			# check vertical overlap near block top
-			if (player.rect.bottom > b.rect.top - vert_tolerance) and (player.rect.top < b.rect.top + vert_tolerance):
+			# check if player is falling past the ledge (bottom at or below block top, but not too far)
+			if player.rect.bottom >= b.rect.top and player.rect.bottom <= b.rect.top + vert_tolerance:
 				player.start_hold(b, "right")
 				return
 		# left side of player near right side of block
 		if abs(player.rect.left - b.rect.right) <= horiz_thresh:
-			if (player.rect.bottom > b.rect.top - vert_tolerance) and (player.rect.top < b.rect.top + vert_tolerance):
+			if player.rect.bottom >= b.rect.top and player.rect.bottom <= b.rect.top + vert_tolerance:
 				player.start_hold(b, "left")
 				return
 
