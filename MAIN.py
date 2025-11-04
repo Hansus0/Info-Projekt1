@@ -4,7 +4,7 @@ import settings
 from settings import WIDTH, HEIGHT, FPS, BLOCK_SIZE, HEALTH_REGEN_RATE, STAMINA_REGEN_RATE, MANA_REGEN_RATE
 from player import Player, Block, Object, handle_move, handle_ledge_grab
 from gui import draw, get_background, UI, spawn_monsters_on_surfaces
-from monster import Boss
+from monster import *
 from world_gen import WorldGenerator
 
 points = 0
@@ -111,10 +111,10 @@ def main():
     monster_spawn_timer = 0.0
     
     # Boss timer (3 minutes)
-    BOSS_TIMER = 180.0
-    boss_countdown = BOSS_TIMER
-    boss_spawned = False
-    arena_bounds = None
+    #BOSS_TIMER = 180.0
+   # boss_countdown = BOSS_TIMER
+    #boss_spawned = False
+   # arena_bounds = None
     
     # Camera
     camera_x = 0
@@ -155,7 +155,7 @@ def main():
                     for m in monsters:
                         if m.rect.collidepoint(mouse_pos):
                             monsters_to_remove.append(m)
-                    
+                    points= points + 10
                     # Remove killed monsters
                     for m in monsters_to_remove:
                         monsters.remove(m)
@@ -163,9 +163,9 @@ def main():
                 if is_dead and respawn_button and respawn_button.collidepoint(event.pos):
                     player, objects, monsters, ui, world_gen, starting_y = reset_game()
                     is_dead = False
-                    boss_spawned = False
-                    boss_countdown = BOSS_TIMER
-                    arena_bounds = None
+                    #boss_spawned = False
+                    #boss_countdown = BOSS_TIMER
+                    #arena_bounds = None
                     monster_spawn_timer = 0.0
                     DEATH_LINE_Y = starting_y + BLOCK_SIZE * 15
                     points = 0
@@ -236,12 +236,24 @@ def main():
                         monsters_to_remove.append(m)
                 for m in monsters_to_remove:
                     monsters.remove(m)
+                if monsters_to_remove:
+                    points += 10
+                    ui.points += 10
 
                 if collided_blocks or monsters_to_remove:
                     player.stomping = False
                     player.y_vel = -player.GRAVITY * 12  # Even higher bounce jump
                     player.stomp_timer = 0.0
                     player.stomp_cooldown_timer = 0.0
+            
+            #Wenn der Spieler dasht,d dann werden Monster dabei getötet
+            if player.dashing:
+                monsters_to_remove = []
+                for m in monsters[:]:
+                    if pygame.sprite.collide_mask(player, m):
+                        monsters_to_remove.append(m)
+                for m in monsters_to_remove:
+                    monsters.remove(m)
                 if monsters_to_remove:
                     points += 10
                     ui.points += 10
@@ -284,7 +296,7 @@ def main():
 
             # Monster spawning on platforms
             monster_spawn_timer += dt
-            if monster_spawn_timer >= MONSTER_SPAWN_INTERVAL and not boss_spawned:
+            if monster_spawn_timer >= MONSTER_SPAWN_INTERVAL:
                 monster_spawn_timer = 0.0
                 if len(monsters) < MAX_MONSTERS:
                     # Find blocks near player for spawning
@@ -327,33 +339,33 @@ def main():
                     ui.damage_flash = min(1.0, ui.damage_flash + 0.3)
 
             # Boss countdown
-            if not boss_spawned:
-                boss_countdown -= dt
-                if boss_countdown <= 0:
+            #if not boss_spawned:
+                #boss_countdown -= dt
+                #if boss_countdown <= 0:
                     # Create arena at current position
-                    arena_width = int(settings.WIDTH * 2)
-                    left_bound = player_x - arena_width // 4
-                    right_bound = left_bound + arena_width
+                    #arena_width = int(settings.WIDTH * 2)
+                    #left_bound = player_x - arena_width // 4
+                    #right_bound = left_bound + arena_width
 
                     # Clear existing monsters
-                    monsters.clear()
+                    #monsters.clear()
 
                     # Create arena walls
-                    left_wall = Object(left_bound - 48, -settings.HEIGHT * 2, 
-                                     48, settings.HEIGHT * 6, name="ArenaWall")
-                    right_wall = Object(right_bound, -settings.HEIGHT * 2, 
-                                      48, settings.HEIGHT * 6, name="ArenaWall")
+                    #left_wall = Object(left_bound - 48, -settings.HEIGHT * 2, 
+                                     #48, settings.HEIGHT * 6, name="ArenaWall")
+                    #right_wall = Object(right_bound, -settings.HEIGHT * 2, 
+                                      #48, settings.HEIGHT * 6, name="ArenaWall")
                     
-                    for wall in (left_wall, right_wall):
-                        wall.image.fill((255, 0, 0))
-                        wall.mask = pygame.mask.from_surface(wall.image)
-                        objects.append(wall)
+                    #for wall in (left_wall, right_wall):
+                        #wall.image.fill((255, 0, 0))
+                        #wall.mask = pygame.mask.from_surface(wall.image)
+                        #objects.append(wall)
 
                     # Spawn boss in center of arena
-                    boss = Boss(left_bound + arena_width // 2, starting_y - 100)
-                    monsters.append(boss)
-                    boss_spawned = True
-                    arena_bounds = (left_bound, right_bound)
+                    #boss = Boss(left_bound + arena_width // 2, starting_y - 100)
+                    #monsters.append(boss)
+                    #boss_spawned = True
+                    #arena_bounds = (left_bound, right_bound)
 
             # Check for death
             if player.rect.bottom > DEATH_LINE_Y or ui.health <= 0:
@@ -367,16 +379,16 @@ def main():
                  monsters=monsters, camera_y=camera_y)
 
             # Draw boss countdown without flickering
-            if not boss_spawned:
-                timer_str = f"Boss: {int(boss_countdown) // 60:02d}:{int(boss_countdown) % 60:02d}"
-                # Only re-render if text changed
-                if timer_str != last_timer_text:
-                    timer_text_surface = timer_font.render(timer_str, True, (255, 0, 0))
-                    last_timer_text = timer_str
-                
-                if timer_text_surface:
-                    window.blit(timer_text_surface, 
-                              (settings.WIDTH // 2 - timer_text_surface.get_width() // 2, 20))
+ #           if not boss_spawned:
+  #              timer_str = f"Boss: {int(boss_countdown) // 60:02d}:{int(boss_countdown) % 60:02d}"
+   #             # Only re-render if text changed
+    #            if timer_str != last_timer_text:
+     #               timer_text_surface = timer_font.render(timer_str, True, (255, 0, 0))
+      #              last_timer_text = timer_str
+       #         
+        #        if timer_text_surface:
+         #           window.blit(timer_text_surface, 
+          #                    (settings.WIDTH // 2 - timer_text_surface.get_width() // 2, 20))
 
         else:
             # Death screen
